@@ -30,7 +30,7 @@ seed: ???
 dataset_repo_id: lerobot/pusht
 video_backend: pyav
 
-# 
+# Weights and Biases (https://wandb.ai) tracking
 wandb:
   enable: true
 
