@@ -30,6 +30,10 @@ seed: ???
 dataset_repo_id: lerobot/pusht
 video_backend: pyav
 
+# 
+wandb:
+  enable: true
+
 training:
   offline_steps: ???
 
