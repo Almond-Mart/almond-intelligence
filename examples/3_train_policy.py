@@ -4,6 +4,7 @@ Once you have trained a model with this script, you can try to evaluate it on
 examples/2_evaluate_pretrained_policy.py
 """
 
+import os
 from pathlib import Path
 
 import torch
@@ -19,8 +20,8 @@ output_directory.mkdir(parents=True, exist_ok=True)
 # Number of offline training steps (we'll only do offline training for this example.)
 # Adjust as you prefer. 5000 steps are needed to get something worth evaluating.
 training_steps = 5000
-device = torch.device("cuda")
-log_freq = 250
+device = torch.device("mps" if os.uname().sysname == "Darwin" else "cuda")
+log_freq = 1
 
 # Set up the dataset.
 delta_timestamps = {
@@ -35,45 +36,49 @@ delta_timestamps = {
 }
 dataset = LeRobotDataset("lerobot/pusht", delta_timestamps=delta_timestamps)
 
-# Set up the the policy.
-# Policies are initialized with a configuration class, in this case `DiffusionConfig`.
-# For this example, no arguments need to be passed because the defaults are set up for PushT.
-# If you're doing something different, you will likely need to change at least some of the defaults.
-cfg = DiffusionConfig()
-policy = DiffusionPolicy(cfg, dataset_stats=dataset.stats)
-policy.train()
-policy.to(device)
+def main():
+    # Set up the the policy.
+    # Policies are initialized with a configuration class, in this case `DiffusionConfig`.
+    # For this example, no arguments need to be passed because the defaults are set up for PushT.
+    # If you're doing something different, you will likely need to change at least some of the defaults.
+    cfg = DiffusionConfig()
+    policy = DiffusionPolicy(cfg, dataset_stats=dataset.stats)
+    policy.train()
+    policy.to(device)
 
-optimizer = torch.optim.Adam(policy.parameters(), lr=1e-4)
+    optimizer = torch.optim.Adam(policy.parameters(), lr=1e-4)
 
-# Create dataloader for offline training.
-dataloader = torch.utils.data.DataLoader(
-    dataset,
-    num_workers=4,
-    batch_size=64,
-    shuffle=True,
-    pin_memory=device != torch.device("cpu"),
-    drop_last=True,
-)
+    # Create dataloader for offline training.
+    dataloader = torch.utils.data.DataLoader(
+        dataset,
+        num_workers=4,
+        batch_size=64,
+        shuffle=True,
+        pin_memory=device != torch.device("cpu"),
+        drop_last=True,
+    )
 
-# Run training loop.
-step = 0
-done = False
-while not done:
-    for batch in dataloader:
-        batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
-        output_dict = policy.forward(batch)
-        loss = output_dict["loss"]
-        loss.backward()
-        optimizer.step()
-        optimizer.zero_grad()
+    # Run training loop.
+    step = 0
+    done = False
+    while not done:
+        for batch in dataloader:
+            batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
+            output_dict = policy.forward(batch)
+            loss = output_dict["loss"]
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
 
-        if step % log_freq == 0:
-            print(f"step: {step} loss: {loss.item():.3f}")
-        step += 1
-        if step >= training_steps:
-            done = True
-            break
+            if step % log_freq == 0:
+                print(f"step: {step} loss: {loss.item():.3f}")
+            step += 1
+            if step >= training_steps:
+                done = True
+                break
 
-# Save a policy checkpoint.
-policy.save_pretrained(output_directory)
+    # Save a policy checkpoint.
+    policy.save_pretrained(output_directory)
+
+if __name__ == "__main__":
+    main()
