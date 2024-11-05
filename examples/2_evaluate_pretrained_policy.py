@@ -30,6 +30,9 @@ policy.eval()
 if torch.cuda.is_available():
     device = torch.device("cuda")
     print("GPU is available. Device set to:", device)
+if torch.backends.mps.is_available():
+    device = torch.device("mps")
+    print("MPS is available. Device set to:", device)
 else:
     device = torch.device("cpu")
     print(f"GPU is not available. Device set to: {device}. Inference will be slower than on GPU.")
