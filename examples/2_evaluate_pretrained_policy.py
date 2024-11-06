@@ -4,8 +4,10 @@ training outputs directory. In the latter case, you might want to run examples/3
 """
 
 from pathlib import Path
+from pprint import pprint
 
 import gym_pusht  # noqa: F401
+import gym_aloha  # noqa: F401
 import gymnasium as gym
 import imageio
 import numpy
@@ -13,31 +15,42 @@ import torch
 from huggingface_hub import snapshot_download
 
 from lerobot.common.policies.diffusion.modeling_diffusion import DiffusionPolicy
+from lerobot.common.policies.act.modeling_act import ACTPolicy
+
+TRANSFER_CUBE = "lerobot/act_aloha_sim_transfer_cube_human"
+PUSH_T = "lerobot/diffusion_pusht"
+
+model = TRANSFER_CUBE
 
 # Create a directory to store the video of the evaluation
-output_directory = Path("outputs/eval/example_pusht_diffusion")
+output_directory = Path("outputs/eval/example_transfer_cube_act" if model == TRANSFER_CUBE else "outputs/eval/example_pusht_diffusion")
 output_directory.mkdir(parents=True, exist_ok=True)
 
 # Download the diffusion policy for pusht environment
-pretrained_policy_path = Path(snapshot_download("lerobot/diffusion_pusht"))
+pretrained_policy_path = Path(snapshot_download(model))
 # OR uncomment the following to evaluate a policy from the local outputs/train folder.
 # pretrained_policy_path = Path("outputs/train/example_pusht_diffusion")
 
-policy = DiffusionPolicy.from_pretrained(pretrained_policy_path)
+if model == TRANSFER_CUBE:
+    policy = ACTPolicy.from_pretrained(pretrained_policy_path)
+elif model == PUSH_T:
+    policy = DiffusionPolicy.from_pretrained(pretrained_policy_path)
+
 policy.eval()
 
 # Check if GPU is available
 if torch.cuda.is_available():
     device = torch.device("cuda")
     print("GPU is available. Device set to:", device)
-if torch.backends.mps.is_available():
-    device = torch.device("mps")
-    print("MPS is available. Device set to:", device)
+# if torch.backends.mps.is_available():
+#     device = torch.device("mps")
+#     print("MPS is available. Device set to:", device)
 else:
     device = torch.device("cpu")
     print(f"GPU is not available. Device set to: {device}. Inference will be slower than on GPU.")
     # Decrease the number of reverse-diffusion steps (trades off a bit of quality for 10x speed)
-    policy.diffusion.num_inference_steps = 10
+    if model == PUSH_T:
+        policy.diffusion.num_inference_steps = 10
 
 policy.to(device)
 
@@ -45,9 +58,9 @@ policy.to(device)
 # an image of the scene and state/position of the agent. The environment
 # also automatically stops running after 300 interactions/steps.
 env = gym.make(
-    "gym_pusht/PushT-v0",
+    "gym_aloha/AlohaTransferCube-v0" if model == TRANSFER_CUBE else "gym_pusht/PushT-v0",
     obs_type="pixels_agent_pos",
-    max_episode_steps=300,
+    max_episode_steps=1000,
 )
 
 # Reset the policy and environmens to prepare for rollout
@@ -67,7 +80,7 @@ done = False
 while not done:
     # Prepare observation for the policy running in Pytorch
     state = torch.from_numpy(numpy_observation["agent_pos"])
-    image = torch.from_numpy(numpy_observation["pixels"])
+    image = torch.from_numpy(numpy_observation["pixels"]["top"] if model == TRANSFER_CUBE else numpy_observation["pixels"])
 
     # Convert to float32 with image from channel first in [0,255]
     # to channel last in [0,1]
@@ -86,7 +99,7 @@ while not done:
     # Create the policy input dictionary
     observation = {
         "observation.state": state,
-        "observation.image": image,
+        "observation.images.top" if model == TRANSFER_CUBE else "observation.image": image,
     }
 
     # Predict the next action with respect to the current observation
