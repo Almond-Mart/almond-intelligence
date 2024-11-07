@@ -1,5 +1,9 @@
+from argparse import ArgumentParser
 import asyncio
 import json
+import os
+import socket
+
 import numpy as np
 import torch
 from torch import Tensor
@@ -14,10 +18,15 @@ client: WebSocketClientProtocol = None
 
 async def connect():
     global client
-
-    print("Connecting to Almond rPi")
     uri = "ws://raspberrypi.local:8000"
-    client = await websockets.connect(uri)
+
+    try:
+        print("Connecting to Almond rPi")
+        client = await websockets.connect(uri)
+    except socket.gaierror:
+        print("Failed to connect to Almond rPi")
+        exit(1)
+
     client.send(json.dumps({"type": "inference"}))
     print("Connected to Almond rPi")
 
@@ -59,8 +68,20 @@ async def inference_loop(model_path: str):
         client.send(json.dumps({"inference": inference}))
 
 async def main(model_path: str):
+    if not os.path.isfile(model_path):
+        print(f"Model file not found: {model_path}")
+        exit(1)
+
     await connect()
-    await inference_loop()
+    await inference_loop(model_path)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = ArgumentParser(
+        prog="Almond Intellignece",
+        description="Control Almond rPi with AI"
+    )
+
+    parser.add_argument("--model", dest="model_path", required=True, help="Path to the model file")
+    args = vars(parser.parse_args())
+
+    asyncio.run(main(**args))
