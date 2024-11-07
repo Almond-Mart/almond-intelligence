@@ -11,6 +11,7 @@ import websockets
 from websockets import WebSocketClientProtocol
 
 from lerobot.common.policies.act.modeling_act import ACTPolicy
+from lerobot.common.policies.diffusion.modeling_diffusion import DiffusionPolicy
 
 DEFAULT_DEVICE = "mps"
 
@@ -30,10 +31,7 @@ async def connect():
     client.send(json.dumps({"type": "inference"}))
     print("Connected to Almond rPi")
 
-def run_inference(pictures: dict[str, list], positions: list[float], model_path: str) -> list[float]:
-    policy = ACTPolicy.from_pretrained(model_path)
-    policy.to(DEFAULT_DEVICE)
-
+def run_inference(policy: ACTPolicy | DiffusionPolicy, pictures: dict[str, list], positions: list[float]) -> list[float]:
     # Read the follower state and access the frames from the cameras
     observation: dict[str, Tensor] = {}
     observation["observation.state"] = torch.as_tensor(positions)
@@ -60,20 +58,27 @@ def run_inference(pictures: dict[str, list], positions: list[float], model_path:
     # Order the robot to move
     return list(action.numpy())
 
-async def inference_loop(model_path: str):
+async def inference_loop(model: str, model_path: str):
+    if model == "act":
+        policy = ACTPolicy.from_pretrained(model_path)
+    elif model == "diffusion":
+        policy = DiffusionPolicy.from_pretrained(model_path)
+
+    policy.to(DEFAULT_DEVICE)
+
     async for data in client:
         data = json.loads(data)
 
-        inference = run_inference(data["pictures"], data["positions"], model_path)
+        inference = run_inference(policy, data["pictures"], data["positions"])
         client.send(json.dumps({"inference": inference}))
 
-async def main(model_path: str):
+async def main(model: str, model_path: str):
     if not os.path.isfile(model_path):
         print(f"Model file not found: {model_path}")
         exit(1)
 
     await connect()
-    await inference_loop(model_path)
+    await inference_loop(model, model_path)
 
 if __name__ == "__main__":
     parser = ArgumentParser(
@@ -81,7 +86,8 @@ if __name__ == "__main__":
         description="Control Almond rPi with AI"
     )
 
-    parser.add_argument("--model", dest="model_path", required=True, help="Path to the model file")
+    parser.add_argument("--model", type=str.lower, choices=["act", "diffusion"], required=True, help="Model to use for inference.")
+    parser.add_argument("--model_path", required=True, help="Path to the model file.")
     args = vars(parser.parse_args())
 
     asyncio.run(main(**args))
