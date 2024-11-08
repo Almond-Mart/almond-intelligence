@@ -23,12 +23,11 @@ async def connect():
 
     try:
         print("Connecting to Almond rPi")
-        client = await websockets.connect(uri)
+        client = await websockets.connect(uri, extra_headers={"Almond-Client-Type": "inference"})
     except socket.gaierror:
         print("Failed to connect to Almond rPi")
         exit(1)
 
-    client.send(json.dumps({"type": "inference"}))
     print("Connected to Almond rPi")
 
 def run_inference(policy: ACTPolicy | DiffusionPolicy, pictures: dict[str, list], positions: list[float]) -> list[float]:
