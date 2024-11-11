@@ -1,0 +1,12 @@
+python lerobot/scripts/control_robot.py record \
+  --robot-path lerobot/configs/robot/koch.yaml \
+  --fps 30 \
+  --root data \
+  --repo-id shawnptl8/eval_koch_test_training \
+  --tags tutorial eval \
+  --warmup-time-s 10 \
+  --episode-time-s 15 \
+  --reset-time-s 15 \
+  --num-episodes 10 \
+  --policy-overrides device=mps \
+  -p outputs/train/act_koch_test_training/checkpoints/050000/pretrained_model
