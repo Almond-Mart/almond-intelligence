@@ -1,5 +1,5 @@
-cd /home/ubuntu/almond-intelligence
-conda activate lerobot
+# cd /home/ubuntu/almond-intelligence
+# conda activate lerobot
 
 DATA_DIR=data python lerobot/scripts/train.py \
     dataset_repo_id=shawnptl8/koch_test_training \
