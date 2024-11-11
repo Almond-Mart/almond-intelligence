@@ -6,6 +6,7 @@ examples/2_evaluate_pretrained_policy.py
 
 import os
 from pathlib import Path
+import time
 
 import torch
 
@@ -63,6 +64,7 @@ def main():
     done = False
     while not done:
         for batch in dataloader:
+            start_time = time.time()
             batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
             output_dict = policy.forward(batch)
             loss = output_dict["loss"]
@@ -71,7 +73,8 @@ def main():
             optimizer.zero_grad()
 
             if step % log_freq == 0:
-                print(f"step: {step} loss: {loss.item():.3f}")
+                elapsed_time = time.time() - start_time
+                print(f"step: {step} loss: {loss.item():.3f} time: {elapsed_time:.3f} seconds")
             step += 1
             if step >= training_steps:
                 done = True

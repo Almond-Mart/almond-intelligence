@@ -7,5 +7,5 @@ DATA_DIR=data python lerobot/scripts/train.py \
     env=koch_real \
     hydra.run.dir=outputs/train/act_koch_test_training \
     hydra.job.name=act_koch_test_training \
-    device=cpu \
+    device=mps \
     wandb.enable=true
