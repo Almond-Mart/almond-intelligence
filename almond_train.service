@@ -1,0 +1,12 @@
+[Unit]
+Description=Almond Intelligence util to train model
+After=network.target
+
+[Service]
+ExecStart=bash /home/ubuntu/almond-intelligence/almond_train.sh
+User=ubuntu
+Type=simple
+
+[Install]
+WantedBy=default.target
+RequiredBy=network.target
