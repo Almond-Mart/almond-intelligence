@@ -240,7 +240,7 @@ Steps:
     - Connect **only** the motor of interest to the driver board, making sure to disconnect it from any other motors.
     - Reconnect the power to the driver board.
     - From the software menu select `Device` > `Scan` and let the scan run. A device should appear.
-    - If the device has an asterisk (*) near it, it means the firmware is indeed outdated. From the software menu, select `Tools` > `Firmware Update`. Follow the prompts.
+    - [Only if using U2D2; broken on Waveshare board] If the device has an asterisk (*) near it, it means the firmware is indeed outdated. From the software menu, select `Tools` > `Firmware Update`. Follow the prompts.
     - The main panel should have table with various parameters of the device (refer to the web page, section 5). Select the row with `ID`, and then set the desired ID on the bottom right panel by selecting and clicking `Save`.
     - Just like you did with the ID, also set the `Baud Rate` to 1 Mbps.
 6. Check everything has been done right:
