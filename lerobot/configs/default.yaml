@@ -30,10 +30,6 @@ seed: ???
 dataset_repo_id: lerobot/pusht
 video_backend: pyav
 
-# Weights and Biases (https://wandb.ai) tracking
-wandb:
-  enable: true
-
 training:
   offline_steps: ???
 
@@ -127,7 +123,7 @@ eval:
   use_async_envs: false
 
 wandb:
-  enable: false
+  enable: true
   # Set to true to disable saving an artifact despite save_checkpoint == True
   disable_artifact: false
   project: lerobot
