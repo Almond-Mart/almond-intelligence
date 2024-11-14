@@ -1,5 +1,4 @@
 import argparse
-import asyncio
 import requests
 import os
 import time
@@ -47,7 +46,23 @@ ip = None
 ssh_client = None
 scp_client = None
 
-async def exec_remote_command(command: str | list[str], single: bool = False) -> int:
+current_scp_file = None
+
+def scp_progress(filename: bytes, size: int, sent: int):
+    global current_scp_file
+    filename = filename.decode()
+
+    if filename != current_scp_file:
+        if current_scp_file is not None:
+            print()
+
+        current_scp_file = filename
+        print(f"{filename}: ", end="")
+
+    percent = int(sent / size * 100)
+    print(f"\r{filename}: {percent}% complete", end="")
+
+def exec_remote_command(command: str | list[str], single: bool = False) -> int:
     assert ssh_client is not None, "SSH client not connected."
 
     if isinstance(command, str):
@@ -57,16 +72,18 @@ async def exec_remote_command(command: str | list[str], single: bool = False) ->
 
     for cmd in command:
         _, stdout, _ = ssh_client.exec_command(cmd)
-        exit_status = await asyncio.to_thread(stdout.channel.recv_exit_status)
+        exit_status = stdout.channel.recv_exit_status()
 
         if exit_status != 0:
             return exit_status
 
-async def transfer_file(local_path: str, remote_path: str):
+def transfer_file(local_path: str, remote_path: str):
     assert scp_client is not None, "SCP client not connected."
+    global current_scp_file
 
     recursive = os.path.isdir(local_path)
-    await asyncio.to_thread(scp_client.put, local_path, remote_path, recursive)
+    scp_client.put(local_path, remote_path, recursive)
+    current_scp_file = None
 
 # MARK: Create and connect to server
 
@@ -167,7 +184,7 @@ def connect_to_server():
         except NoValidConnectionsError as e:
             time.sleep(5)
 
-    scp_client = SCPClient(ssh_client.get_transport())
+    scp_client = SCPClient(ssh_client.get_transport(), progress=scp_progress)
 
 def create_server():
     get_cheapest_matching_server()
@@ -221,36 +238,44 @@ def create_server():
 
 # MARK: Clone & setup repo
 
-async def clone_repo():
-    await exec_remote_command(f"git clone https://{env.GITHUB_TOKEN}@github.com/Almond-Mart/almond-intelligence.git")
+def clone_repo():
+    exec_remote_command(f"git clone https://{env.GITHUB_TOKEN}@github.com/Almond-Mart/almond-intelligence.git")
 
-async def install_miniconda():
-    await exec_remote_command([
-        "mkdir -p ~/miniconda3",
-        "wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda3/miniconda.sh",
-        "bash ~/miniconda3/miniconda.sh -b -u -p ~/miniconda3",
-        "rm ~/miniconda3/miniconda.sh",
-        "conda init --all"
-    ])
-
-async def install_dependencies():
-    await exec_remote_command(
-        ["cd almond-intelligence",
-         "conda create -y -n lerobot python=3.10",
-         "conda activate lerobot", 
-         "pip install -e .",
-         f"wandb login {env.WANDB_API_KEY}"
+def install_miniconda():
+    exec_remote_command(
+        [
+            "mkdir -p ~/miniconda3",
+            "wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda3/miniconda.sh",
+            "bash ~/miniconda3/miniconda.sh -b -u -p ~/miniconda3",
+            "rm ~/miniconda3/miniconda.sh",
+            "source ~/miniconda3/bin/activate",
+            "conda init --all"
         ],
         single=True
     )
 
-async def transfer_training_data():
-    await transfer_file(
+def install_dependencies():
+    exec_remote_command(
+        [
+            "cd almond-intelligence",
+            "source ~/miniconda3/bin/activate",
+            "conda create -y -n lerobot python=3.10",
+            "conda activate lerobot", 
+            "pip install -e .",
+            f"wandb login {env.WANDB_API_KEY}"
+        ],
+        single=True
+    )
+
+def transfer_training_data():
+    exec_remote_command(f"mkdir -p ~/almond-intelligence/data/{USERNAME}")
+
+    transfer_file(
         os.path.join(DIR_PATH, "data", USERNAME, dataset),
         os.path.join("~", "almond-intelligence", "data", USERNAME)
     )
 
-async def main():
+def main():
     datasets = available_datasets()
 
     parser = argparse.ArgumentParser(description="Train Almond Intelligence Model")
@@ -272,16 +297,12 @@ async def main():
         create_server()
 
         print("Cloning repo and installing miniconda")
-        asyncio.gather(
-            clone_repo(),
-            install_miniconda(),
-        )
+        clone_repo()
+        install_miniconda()
 
         print("Installing dependencies and transferring training data")
-        asyncio.gather(
-            install_dependencies(),
-            transfer_training_data()
-        )
+        install_dependencies()
+        transfer_training_data()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
