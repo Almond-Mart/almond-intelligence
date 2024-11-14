@@ -12,8 +12,9 @@ RAM = 4
 STORAGE = 32
 GPUS = 1
 VRAM = 24
-GPU_TYPE = "geforcertx4090-pcie-24gb"
+GPU_MODEL = "geforcertx4090-pcie-24gb"
 MIN_UPTIME = 0.999
+OPERATING_SYSTEM = "Ubuntu 22.04 LTS"
 
 # FLOW
 # 1. Ask what data to use
@@ -46,7 +47,7 @@ def create_server():
     }
 
     available_servers = requests.get(available_servers_url, params=available_servers_params).json()
-    matching_servers = {k: v for k, v in available_servers["hostnodes"].items() if GPU_TYPE in v["specs"]["gpu"] and v["status"]["uptime"] >= MIN_UPTIME}
+    matching_servers = {k: v for k, v in available_servers["hostnodes"].items() if GPU_MODEL in v["specs"]["gpu"] and v["status"]["uptime"] >= MIN_UPTIME}
 
     def server_price(server: tuple[str, dict]) -> float:
         specs = server[1]["specs"]
@@ -54,13 +55,41 @@ def create_server():
         cpu_price = specs["cpu"]["price"] * CPUS
         ram_price = specs["ram"]["price"] * RAM
         storage_price = specs["storage"]["price"] * STORAGE
-        gpu_price = specs["gpu"][GPU_TYPE]["price"] * GPUS
+        gpu_price = specs["gpu"][GPU_MODEL]["price"] * GPUS
         
         return cpu_price + ram_price + storage_price + gpu_price
 
     cheapest_matching_server = sorted(matching_servers.items(), key=server_price)[0]
+    hostnode = cheapest_matching_server[0]
+    first_port = cheapest_matching_server[1]["networking"]["ports"][0]
 
-    print(cheapest_matching_server)
+    ssh_key_path = os.path.join("~", ".ssh", "id_ed25519.pub")
+    if not os.path.exists(ssh_key_path):
+        print("SSH key not found. Please generate an SSH key.\nssh-keygen -t ed25519 -C \"your_email@example.com\"")
+        exit(1)
+
+    with open(ssh_key_path) as f:
+        ssh_key = f.read()
+
+    deploy_server_url = "https://marketplace.tensordock.com/api/v0/client/deploy/single"
+    deploy_server_params = {
+        "api_key": env.TENSORDOCK_AUTH_KEY,
+        "api_token": env.TENSORDOCK_AUTH_TOKEN,
+        "ssh_key": ssh_key,
+        "name": "almond-intelligence",
+        "gpu_count": GPUS,
+        "gpu_model": GPU_MODEL,
+        "vcpus": CPUS,
+        "ram": RAM,
+        "storage": STORAGE,
+        "hostnode": hostnode,
+        "operating_system": OPERATING_SYSTEM,
+        "external_ports": f"{{{first_port}}}",
+        "internal_ports": "{22}",
+    }
+
+    response = requests.post(deploy_server_url, params=deploy_server_params)
+    assert response.ok, f"Failed to create server: {response.json()}"
 
 def main():
     datasets = available_datasets()
@@ -77,7 +106,8 @@ def main():
 
     args = parser.parse_args()
 
-    create_server()
+    if args.command == "start":
+        create_server()
 
 if __name__ == "__main__":
     main()
