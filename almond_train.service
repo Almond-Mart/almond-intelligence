@@ -3,7 +3,8 @@ Description=Almond Intelligence util to train model
 After=network.target
 
 [Service]
-ExecStart=bash /home/ubuntu/almond-intelligence/almond_train.sh
+ExecStart=python  /home/ubuntu/almond-intelligence/almond_train.sh
+ExecStop=bash /home/ubuntu/almond-intelligence/almond_train.sh stop
 User=ubuntu
 Type=simple
 

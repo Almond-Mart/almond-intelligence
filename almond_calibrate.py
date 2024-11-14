@@ -1,3 +1,5 @@
+import os
+
 from lerobot.common.robot_devices.motors.dynamixel import DynamixelMotorsBus
 from lerobot.common.robot_devices.robots.manipulator import ManipulatorRobot
 from lerobot.common.robot_devices.cameras.opencv import OpenCVCamera
@@ -32,6 +34,8 @@ follower_arm = DynamixelMotorsBus(
 )
 
 def main():
+    os.remove(".cache/calibration/koch")
+
     robot = ManipulatorRobot(
         robot_type="koch",
         leader_arms={"main": leader_arm},
