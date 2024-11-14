@@ -35,7 +35,7 @@ def available_datasets() -> str:
     datasets = [d for d in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, d))]
     return datasets
 
-def create_server():
+def get_cheapest_matching_server() -> tuple[str, str]:
     available_servers_url = "https://marketplace.tensordock.com/api/v0/client/deploy/hostnodes"
     available_servers_params = {
         "minvCPUs": CPUS,
@@ -62,6 +62,28 @@ def create_server():
     cheapest_matching_server = sorted(matching_servers.items(), key=server_price)[0]
     hostnode = cheapest_matching_server[0]
     first_port = cheapest_matching_server[1]["networking"]["ports"][0]
+
+    return hostnode, first_port
+
+def print_server_runtime():
+    balance_url = "https://marketplace.tensordock.com/api/v0/billing/balance"
+    balance_params = {
+        "api_key": env.TENSORDOCK_AUTH_KEY,
+        "api_token": env.TENSORDOCK_AUTH_TOKEN,
+    }
+
+    balance = requests.get(balance_url, params=balance_params).json()
+    
+    remaining_balance = balance["balance"]
+    hourly_rate = balance["hourly_rate"]
+    runtime = remaining_balance / hourly_rate
+
+    print(f"Remaining balance: ${remaining_balance:.2f}")
+    print(f"Hourly rate: ${hourly_rate:.2f}")
+    print(f"Runtime: {runtime:.2f} hours")
+
+def create_server():
+    hostnode, first_port = get_cheapest_matching_server()
 
     ssh_key_path = os.path.join("~", ".ssh", "id_ed25519.pub")
     if not os.path.exists(ssh_key_path):
@@ -90,6 +112,9 @@ def create_server():
 
     response = requests.post(deploy_server_url, params=deploy_server_params)
     assert response.ok, f"Failed to create server: {response.json()}"
+
+    print("Started server")
+    print_server_runtime()
 
 def main():
     datasets = available_datasets()
