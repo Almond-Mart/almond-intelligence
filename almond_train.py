@@ -257,11 +257,13 @@ async def main():
 
         create_server()
 
+        print("Cloning repo and installing miniconda")
         asyncio.gather(
             clone_repo(),
             install_miniconda(),
         )
 
+        print("Installing dependencies and transferring training data")
         asyncio.gather(
             install_dependencies(),
             transfer_training_data()
