@@ -26,16 +26,14 @@ OPERATING_SYSTEM = "Ubuntu 22.04 LTS"
 # 1. Ask what data to use
 # 2. Create server
 # 3. Check if needs restart to activate GPU
-# 4. Create ssh key
-# 5. Add ssh key to GitHub
-# 6. Clone repo
-# 7. Follow LeRobot instructions & transfer training data
-# 8. Add wandb key
-# 9. Move systemd script to /etc/systemd/system/
-# 10. Start service
-# 11. Save checkpoint models to Google Drive
-# 12. Stop service when training is complete
-# 13. Delete server
+# 4. Clone repo with fine-grained personal access token
+# 5. Follow LeRobot instructions & transfer training data
+# 6. Add wandb key
+# 7. Move systemd script to /etc/systemd/system/
+# 8. Start service
+# 9. Save checkpoint models to Google Drive
+# 10. Stop service when training is complete
+# 11. Delete server
 
 hostnode = None
 
@@ -45,17 +43,6 @@ ip = None
 
 ssh_client = None
 scp_client = None
-
-def connect_to_server():
-    assert ip is not None and port is not None and user is not None, "Server not started."
-    global ssh_client, scp_client
-
-    ssh_client = SSHClient()
-    ssh_client.load_system_host_keys()
-    ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh_client.connect(hostname=ip, port=port, username=user)
-
-    scp_client = SCPClient(ssh_client.get_transport())
 
 def available_datasets() -> str:
     dataset_path = os.path.join(DIR_PATH, "data", USERNAME)
@@ -113,7 +100,7 @@ def print_server_runtime():
     print(f"Hourly cost: ${hourly_cost:.2f}")
     print(f"Runtime: {runtime:.2f} hours")
 
-def wait_for_server_start():
+def connect_to_server():
     server_details_url = "https://marketplace.tensordock.com/api/v0/client/get/single"
     server_details_params = {
         "api_key": env.TENSORDOCK_AUTH_KEY,
@@ -121,14 +108,31 @@ def wait_for_server_start():
         "server": hostnode,
     }
 
+    global user, ip
     while True:
         server_details = requests.post(server_details_url, data=server_details_params).json()
         if "virtualmachines" in server_details and server_details["virtualmachines"]["status"].lower() == "running":
-            global user, ip
             user = server_details["virtualmachines"]["default_user"]
             ip = server_details["virtualmachines"]["ip_address"]
 
+            break
+
         time.sleep(5)
+
+    assert ip is not None and port is not None and user is not None, "Server not started."
+    global ssh_client, scp_client
+
+    if ssh_client is not None:
+        ssh_client.close()
+    if scp_client is not None:
+        scp_client.close()
+
+    ssh_client = SSHClient()
+    ssh_client.load_system_host_keys()
+    ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh_client.connect(hostname=ip, port=port, username=user)
+
+    scp_client = SCPClient(ssh_client.get_transport())
 
 def create_server():
     get_cheapest_matching_server()
@@ -164,9 +168,7 @@ def create_server():
     print("Requested server")
     print_server_runtime()
 
-    wait_for_server_start()
-    print("Server started")
-
+    print("Waiting for server to start")
     connect_to_server()
     print("Connected to server")
 
@@ -176,13 +178,9 @@ def create_server():
         print("GPU not detected. Rebooting server...")
         ssh_client.exec_command("sudo reboot")
     
-        ssh_client.close()
-        scp_client.close()
-
         time.sleep(5)
-        
-        wait_for_server_start()
-        print("Server started")
+
+        print("Waiting for server to start")
         connect_to_server()
         print("Connected to server")
 
@@ -202,10 +200,6 @@ async def main():
     args = parser.parse_args()
 
     if args.command == "start":
-        global ip, port, user
-        ip = "70.62.164.136"
-        port = "28206"
-        user = "user"
         create_server()
 
 if __name__ == "__main__":
