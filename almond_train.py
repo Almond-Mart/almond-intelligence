@@ -35,6 +35,8 @@ OPERATING_SYSTEM = "Ubuntu 22.04 LTS"
 # 10. Stop service when training is complete
 # 11. Delete server
 
+dataset = None
+
 hostnode = None
 
 port = None
@@ -56,6 +58,10 @@ async def exec_remote_command(command: str | list[str], single: bool = False) ->
 
         if exit_status != 0:
             return exit_status
+
+async def transfer_file(local_path: str, remote_path: str):
+    recursive = os.path.isdir(local_path)
+    await asyncio.to_thread(scp_client.put, local_path, remote_path, recursive)
 
 # MARK: Create and connect to server
 
@@ -225,7 +231,10 @@ async def install_dependencies():
     )
 
 async def transfer_training_data():
-    pass
+    await transfer_file(
+        os.path.join(DIR_PATH, "data", USERNAME, dataset),
+        os.path.join("~", "almond-intelligence", "data", USERNAME)
+    )
 
 async def main():
     datasets = available_datasets()
@@ -243,6 +252,9 @@ async def main():
     args = parser.parse_args()
 
     if args.command == "start":
+        global dataset
+        dataset = args.dataset
+
         create_server()
 
         asyncio.gather(
