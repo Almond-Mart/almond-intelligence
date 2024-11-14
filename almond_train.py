@@ -44,6 +44,21 @@ ip = None
 ssh_client = None
 scp_client = None
 
+async def exec_remote_command(command: str | list[str], single: bool = False) -> int:
+    if isinstance(command, str):
+        command = [command]
+    elif single:
+        command = [" && ".join(command)]
+
+    for cmd in command:
+        _, stdout, _ = ssh_client.exec_command(cmd)
+        exit_status = await asyncio.to_thread(stdout.channel.recv_exit_status)
+
+        if exit_status != 0:
+            return exit_status
+
+# MARK: Create and connect to server
+
 def available_datasets() -> str:
     dataset_path = os.path.join(DIR_PATH, "data", USERNAME)
     datasets = [d for d in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, d)) and not d.startswith("eval_")]
@@ -184,6 +199,34 @@ def create_server():
         connect_to_server()
         print("Connected to server")
 
+# MARK: Clone & setup repo
+
+async def clone_repo():
+    await exec_remote_command(f"git clone https://{env.GITHUB_TOKEN}@github.com/Almond-Mart/almond-intelligence.git")
+
+async def install_miniconda():
+    await exec_remote_command([
+        "mkdir -p ~/miniconda3",
+        "wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda3/miniconda.sh",
+        "bash ~/miniconda3/miniconda.sh -b -u -p ~/miniconda3",
+        "rm ~/miniconda3/miniconda.sh",
+        "conda init --all"
+    ])
+
+async def install_dependencies():
+    await exec_remote_command(
+        ["cd almond-intelligence",
+         "conda create -y -n lerobot python=3.10",
+         "conda activate lerobot", 
+         "pip install -e .",
+         f"wandb login {env.WANDB_API_KEY}"
+        ],
+        single=True
+    )
+
+async def transfer_training_data():
+    pass
+
 async def main():
     datasets = available_datasets()
 
@@ -201,6 +244,16 @@ async def main():
 
     if args.command == "start":
         create_server()
+
+        asyncio.gather(
+            clone_repo(),
+            install_miniconda(),
+        )
+
+        asyncio.gather(
+            install_dependencies(),
+            transfer_training_data()
+        )
 
 if __name__ == "__main__":
     asyncio.run(main())
