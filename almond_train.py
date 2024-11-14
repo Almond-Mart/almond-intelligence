@@ -6,6 +6,7 @@ import time
 
 import paramiko
 from paramiko import SSHClient
+from paramiko.ssh_exception import NoValidConnectionsError
 from scp import SCPClient
 
 import env
@@ -47,6 +48,8 @@ ssh_client = None
 scp_client = None
 
 async def exec_remote_command(command: str | list[str], single: bool = False) -> int:
+    assert ssh_client is not None, "SSH client not connected."
+
     if isinstance(command, str):
         command = [command]
     elif single:
@@ -60,6 +63,8 @@ async def exec_remote_command(command: str | list[str], single: bool = False) ->
             return exit_status
 
 async def transfer_file(local_path: str, remote_path: str):
+    assert scp_client is not None, "SCP client not connected."
+
     recursive = os.path.isdir(local_path)
     await asyncio.to_thread(scp_client.put, local_path, remote_path, recursive)
 
@@ -122,21 +127,24 @@ def print_server_runtime():
     print(f"Runtime: {runtime:.2f} hours")
 
 def connect_to_server():
-    server_details_url = "https://marketplace.tensordock.com/api/v0/client/get/single"
+    server_details_url = "https://marketplace.tensordock.com/api/v0/client/list"
     server_details_params = {
         "api_key": env.TENSORDOCK_AUTH_KEY,
         "api_token": env.TENSORDOCK_AUTH_TOKEN,
-        "server": hostnode,
     }
 
     global user, ip
     while True:
         server_details = requests.post(server_details_url, data=server_details_params).json()
-        if "virtualmachines" in server_details and server_details["virtualmachines"]["status"].lower() == "running":
-            user = server_details["virtualmachines"]["default_user"]
-            ip = server_details["virtualmachines"]["ip_address"]
+        if "virtualmachines" in server_details:
+            vms = server_details["virtualmachines"]
+            vm = next(iter(vms.values()))
 
-            break
+            if vm["status"].lower() == "running":
+                user = vm["default_user"]
+                ip = vm["ip_address"]
+
+                break
 
         time.sleep(5)
 
@@ -148,10 +156,16 @@ def connect_to_server():
     if scp_client is not None:
         scp_client.close()
 
+
     ssh_client = SSHClient()
     ssh_client.load_system_host_keys()
     ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh_client.connect(hostname=ip, port=port, username=user)
+
+    while ssh_client.get_transport() is None or not ssh_client.get_transport().is_active():
+        try:
+            ssh_client.connect(hostname=ip, port=port, username=user)
+        except NoValidConnectionsError as e:
+            time.sleep(5)
 
     scp_client = SCPClient(ssh_client.get_transport())
 
