@@ -4,6 +4,10 @@ import requests
 import os
 import time
 
+import paramiko
+from paramiko import SSHClient
+from scp import SCPClient
+
 import env
 
 DIR_PATH = os.path.dirname(__file__)
@@ -21,23 +25,44 @@ OPERATING_SYSTEM = "Ubuntu 22.04 LTS"
 # FLOW
 # 1. Ask what data to use
 # 2. Create server
-# 3. Create ssh key
-# 4. Add ssh key to GitHub
-# 5. Clone repo
-# 6. Follow LeRobot instructions & transfer training data
-# 7. Add wandb key
-# 8. Move systemd script to /etc/systemd/system/
-# 9. Start service
-# 10. Save checkpoint models to Google Drive
-# 11. Stop service when training is complete
-# 12. Delete server
+# 3. Check if needs restart to activate GPU
+# 4. Create ssh key
+# 5. Add ssh key to GitHub
+# 6. Clone repo
+# 7. Follow LeRobot instructions & transfer training data
+# 8. Add wandb key
+# 9. Move systemd script to /etc/systemd/system/
+# 10. Start service
+# 11. Save checkpoint models to Google Drive
+# 12. Stop service when training is complete
+# 13. Delete server
+
+hostnode = None
+
+port = None
+user = None
+ip = None
+
+ssh_client = None
+scp_client = None
+
+def connect_to_server():
+    assert ip is not None and port is not None and user is not None, "Server not started."
+    global ssh_client, scp_client
+
+    ssh_client = SSHClient()
+    ssh_client.load_system_host_keys()
+    ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh_client.connect(hostname=ip, port=port, username=user)
+
+    scp_client = SCPClient(ssh_client.get_transport())
 
 def available_datasets() -> str:
     dataset_path = os.path.join(DIR_PATH, "data", USERNAME)
     datasets = [d for d in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, d)) and not d.startswith("eval_")]
     return datasets
 
-def get_cheapest_matching_server() -> tuple[str, str]:
+def get_cheapest_matching_server():
     available_servers_url = "https://marketplace.tensordock.com/api/v0/client/deploy/hostnodes"
     available_servers_params = {
         "minvCPUs": CPUS,
@@ -65,10 +90,11 @@ def get_cheapest_matching_server() -> tuple[str, str]:
         return cpu_price + ram_price + storage_price + gpu_price
 
     cheapest_matching_server = sorted(matching_servers.items(), key=server_price)[0]
-    hostnode = cheapest_matching_server[0]
-    first_port = cheapest_matching_server[1]["networking"]["ports"][0]
 
-    return hostnode, first_port
+    global hostnode, port
+
+    hostnode = cheapest_matching_server[0]
+    port = cheapest_matching_server[1]["networking"]["ports"][0]
 
 def print_server_runtime():
     balance_url = "https://marketplace.tensordock.com/api/v0/billing/balance"
@@ -87,7 +113,7 @@ def print_server_runtime():
     print(f"Hourly cost: ${hourly_cost:.2f}")
     print(f"Runtime: {runtime:.2f} hours")
 
-def wait_for_server_start(hostnode: str):
+def wait_for_server_start():
     server_details_url = "https://marketplace.tensordock.com/api/v0/client/get/single"
     server_details_params = {
         "api_key": env.TENSORDOCK_AUTH_KEY,
@@ -97,13 +123,15 @@ def wait_for_server_start(hostnode: str):
 
     while True:
         server_details = requests.post(server_details_url, data=server_details_params).json()
-        if server_details["virtualmachines"]["status"].lower() == "running":
-            break
+        if "virtualmachines" in server_details and server_details["virtualmachines"]["status"].lower() == "running":
+            global user, ip
+            user = server_details["virtualmachines"]["default_user"]
+            ip = server_details["virtualmachines"]["ip_address"]
 
         time.sleep(5)
 
 def create_server():
-    hostnode, first_port = get_cheapest_matching_server()
+    get_cheapest_matching_server()
 
     ssh_key_path = os.path.expanduser("~/.ssh/id_ed25519.pub")
     if not os.path.exists(ssh_key_path):
@@ -126,7 +154,7 @@ def create_server():
         "storage": STORAGE,
         "hostnode": hostnode,
         "operating_system": OPERATING_SYSTEM,
-        "external_ports": f"{{{first_port}}}",
+        "external_ports": f"{{{port}}}",
         "internal_ports": "{22}",
     }
 
@@ -136,8 +164,27 @@ def create_server():
     print("Requested server")
     print_server_runtime()
 
-    wait_for_server_start(hostnode)
+    wait_for_server_start()
     print("Server started")
+
+    connect_to_server()
+    print("Connected to server")
+
+    # Check if needs restart to activate GPU
+    _, stdout, _ = ssh_client.exec_command("nvidia-smi")
+    if stdout.read().decode().strip().lower().startswith("failed"):
+        print("GPU not detected. Rebooting server...")
+        ssh_client.exec_command("sudo reboot")
+    
+        ssh_client.close()
+        scp_client.close()
+
+        time.sleep(5)
+        
+        wait_for_server_start()
+        print("Server started")
+        connect_to_server()
+        print("Connected to server")
 
 async def main():
     datasets = available_datasets()
@@ -155,8 +202,11 @@ async def main():
     args = parser.parse_args()
 
     if args.command == "start":
+        global ip, port, user
+        ip = "70.62.164.136"
+        port = "28206"
+        user = "user"
         create_server()
-
 
 if __name__ == "__main__":
     asyncio.run(main())
